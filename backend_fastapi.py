@@ -24,11 +24,21 @@ SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 PORT = int(os.environ.get("PORT", 8000))
 
-# Validate environment variables
-if not all([SUPABASE_URL, SUPABASE_KEY, GROQ_API_KEY]):
-    raise ValueError("Missing required environment variables: SUPABASE_URL, SUPABASE_KEY, GROQ_API_KEY")
+# Validate environment variables - make it more graceful
+missing_vars = []
+if not SUPABASE_URL:
+    missing_vars.append("SUPABASE_URL")
+if not SUPABASE_KEY:
+    missing_vars.append("SUPABASE_KEY")
+if not GROQ_API_KEY:
+    missing_vars.append("GROQ_API_KEY")
 
-print("✅ All environment variables configured")
+if missing_vars:
+    print(f"⚠️  Warning: Missing environment variables: {", ".join(missing_vars)}")
+    print("⚠️  Some features may not work properly")
+
+else:
+    print("✅ All environment variables configured")
 
 # Pydantic models matching the actual Supabase schema
 class Artifact(BaseModel):
@@ -119,11 +129,11 @@ async def health_check():
             "checks": {
                 "supabase": supabase_healthy,
                 "groq": groq_healthy,
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(datetime.timezone.utc).isoformat()
             }
         }
     except Exception as e:
-        return {"status": "degraded", "error": str(e), "timestamp": datetime.utcnow().isoformat()}
+        return {"status": "degraded", "error": str(e), "timestamp": datetime.now(datetime.timezone.utc).isoformat()}
 
 async def test_supabase_connection():
     """Test Supabase connection"""
@@ -162,6 +172,9 @@ async def test_groq_connection():
         return False
 
 async def get_supabase_data(table: str, filters: Optional[Dict] = None) -> List[Dict]:
+    """Generic function to get data from Supabase"""
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        raise HTTPException(status_code=503, detail="Supabase not configured")
     """Generic function to get data from Supabase"""
     headers = {
         "apikey": SUPABASE_KEY,
@@ -226,6 +239,9 @@ async def get_incident_data(incident_id: str) -> Optional[IncidentWithRelations]
         return None
 
 async def analyze_with_groq(incident_data: IncidentWithRelations) -> RCAResponse:
+    """Analyze incident using Groq LLM"""
+    if not GROQ_API_KEY:
+        raise HTTPException(status_code=503, detail="Groq API not configured")
     """Analyze incident data using Groq LLM"""
     
     print(f"🔍 analyze_with_groq called for incident: {incident_data.incident.incident_id}")
@@ -334,7 +350,7 @@ async def analyze_with_groq(incident_data: IncidentWithRelations) -> RCAResponse
                     contributing_factors=analysis.get("contributing_factors", []),
                     recommendations=analysis.get("recommendations", []),
                     email_draft=analysis.get("email_draft", "Email draft not available"),
-                    analysis_timestamp=datetime.utcnow()
+                    analysis_timestamp=datetime.now(datetime.timezone.utc)
                 )
                 
             except json.JSONDecodeError as e:
@@ -348,7 +364,7 @@ async def analyze_with_groq(incident_data: IncidentWithRelations) -> RCAResponse
                     contributing_factors=["Analysis completed"],
                     recommendations=["Review incident data manually"],
                     email_draft="Analysis completed. Please review the incident details manually.",
-                    analysis_timestamp=datetime.utcnow()
+                    analysis_timestamp=datetime.now(datetime.timezone.utc)
                 )
                 
     except Exception as e:
@@ -363,7 +379,7 @@ async def root():
         "status": "healthy",
         "message": "AgentOps RCA Backend",
         "version": "1.0.0",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(datetime.timezone.utc).isoformat(),
         "endpoints": [
             "/health",
             "/incidents",
@@ -381,7 +397,7 @@ async def test_endpoint():
     return {
         "message": "Test endpoint working",
         "function_location": "backend_fastapi.py",
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": datetime.now(datetime.timezone.utc).isoformat()
     }
 
 @app.get("/incidents")
@@ -391,7 +407,7 @@ async def get_incidents():
         incidents = await get_supabase_data("incidents")
         return incidents
     except Exception as e:
-        return {"status": "degraded", "error": str(e), "timestamp": datetime.utcnow().isoformat()}
+        return {"status": "degraded", "error": str(e), "timestamp": datetime.now(datetime.timezone.utc).isoformat()}
 
 @app.get("/incidents/{incident_id}")
 async def get_incident(incident_id: str):
@@ -404,7 +420,7 @@ async def get_incident(incident_id: str):
     except HTTPException:
         raise
     except Exception as e:
-        return {"status": "degraded", "error": str(e), "timestamp": datetime.utcnow().isoformat()}
+        return {"status": "degraded", "error": str(e), "timestamp": datetime.now(datetime.timezone.utc).isoformat()}
 
 @app.get("/incidents/{incident_id}/full")
 async def get_incident_full(incident_id: str):
@@ -417,7 +433,7 @@ async def get_incident_full(incident_id: str):
     except HTTPException:
         raise
     except Exception as e:
-        return {"status": "degraded", "error": str(e), "timestamp": datetime.utcnow().isoformat()}
+        return {"status": "degraded", "error": str(e), "timestamp": datetime.now(datetime.timezone.utc).isoformat()}
 
 @app.post("/rca/analyze")
 async def analyze_incident(request: RCARequest):
@@ -444,7 +460,7 @@ async def analyze_incident(request: RCARequest):
         raise
     except Exception as e:
         print(f"❌ RCA analysis failed: {e}")
-        return {"status": "degraded", "error": str(e), "timestamp": datetime.utcnow().isoformat()}
+        return {"status": "degraded", "error": str(e), "timestamp": datetime.now(datetime.timezone.utc).isoformat()}
 
 @app.get("/spans")
 async def get_spans():
@@ -453,7 +469,7 @@ async def get_spans():
         spans = await get_supabase_data("spans")
         return spans
     except Exception as e:
-        return {"status": "degraded", "error": str(e), "timestamp": datetime.utcnow().isoformat()}
+        return {"status": "degraded", "error": str(e), "timestamp": datetime.now(datetime.timezone.utc).isoformat()}
 
 @app.get("/artifacts")
 async def get_artifacts():
@@ -462,17 +478,26 @@ async def get_artifacts():
         artifacts = await get_supabase_data("artifacts")
         return artifacts
     except Exception as e:
-        return {"status": "degraded", "error": str(e), "timestamp": datetime.utcnow().isoformat()}
+        return {"status": "degraded", "error": str(e), "timestamp": datetime.now(datetime.timezone.utc).isoformat()}
 
 # Startup event
 @app.on_event("startup")
 async def startup_event():
     """Application startup event"""
     print("🚀 AgentOps RCA Backend starting up...")
+    print(f"📊 Environment check: SUPABASE_URL={bool(SUPABASE_URL)}, SUPABASE_KEY={bool(SUPABASE_KEY)}, GROQ_API_KEY={bool(GROQ_API_KEY)}")
     
-    # Test connections
-    supabase_ok = await test_supabase_connection()
-    groq_ok = await test_groq_connection()
+    # Test connections only if environment variables are configured
+    if SUPABASE_URL and SUPABASE_KEY:
+        supabase_ok = await test_supabase_connection()
+    else:
+        supabase_ok = False
+        print("⚠️  Supabase not configured - skipping connection test")
+    if GROQ_API_KEY:
+        groq_ok = await test_groq_connection()
+    else:
+        groq_ok = False
+        print("⚠️  Groq not configured - skipping connection test")
     
     if not supabase_ok:
         print("⚠️  Warning: Supabase connection failed")
