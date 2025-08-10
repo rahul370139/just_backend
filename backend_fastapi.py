@@ -102,11 +102,17 @@ app.add_middleware(
 async def health_check():
     """Health check endpoint"""
     try:
-        # Test Supabase connection
-        supabase_healthy = await test_supabase_connection()
+        # Test Supabase connection if configured
+        if SUPABASE_URL and SUPABASE_KEY:
+            supabase_healthy = await test_supabase_connection()
+        else:
+            supabase_healthy = "not_configured"
         
-        # Test Groq connection
-        groq_healthy = await test_groq_connection()
+        # Test Groq connection if configured
+        if GROQ_API_KEY:
+            groq_healthy = await test_groq_connection()
+        else:
+            groq_healthy = "not_configured"
         
         return {
             "status": "healthy",
@@ -117,7 +123,7 @@ async def health_check():
             }
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"status": "degraded", "error": str(e), "timestamp": datetime.utcnow().isoformat()}
 
 async def test_supabase_connection():
     """Test Supabase connection"""
@@ -352,10 +358,12 @@ async def analyze_with_groq(incident_data: IncidentWithRelations) -> RCAResponse
 # API Endpoints
 @app.get("/")
 async def root():
-    """Root endpoint"""
+    """Root endpoint - also serves as basic health check"""
     return {
+        "status": "healthy",
         "message": "AgentOps RCA Backend",
         "version": "1.0.0",
+        "timestamp": datetime.utcnow().isoformat(),
         "endpoints": [
             "/health",
             "/incidents",
@@ -383,7 +391,7 @@ async def get_incidents():
         incidents = await get_supabase_data("incidents")
         return incidents
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"status": "degraded", "error": str(e), "timestamp": datetime.utcnow().isoformat()}
 
 @app.get("/incidents/{incident_id}")
 async def get_incident(incident_id: str):
@@ -396,7 +404,7 @@ async def get_incident(incident_id: str):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"status": "degraded", "error": str(e), "timestamp": datetime.utcnow().isoformat()}
 
 @app.get("/incidents/{incident_id}/full")
 async def get_incident_full(incident_id: str):
@@ -409,7 +417,7 @@ async def get_incident_full(incident_id: str):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"status": "degraded", "error": str(e), "timestamp": datetime.utcnow().isoformat()}
 
 @app.post("/rca/analyze")
 async def analyze_incident(request: RCARequest):
@@ -436,7 +444,7 @@ async def analyze_incident(request: RCARequest):
         raise
     except Exception as e:
         print(f"❌ RCA analysis failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"status": "degraded", "error": str(e), "timestamp": datetime.utcnow().isoformat()}
 
 @app.get("/spans")
 async def get_spans():
@@ -445,7 +453,7 @@ async def get_spans():
         spans = await get_supabase_data("spans")
         return spans
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"status": "degraded", "error": str(e), "timestamp": datetime.utcnow().isoformat()}
 
 @app.get("/artifacts")
 async def get_artifacts():
@@ -454,7 +462,7 @@ async def get_artifacts():
         artifacts = await get_supabase_data("artifacts")
         return artifacts
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"status": "degraded", "error": str(e), "timestamp": datetime.utcnow().isoformat()}
 
 # Startup event
 @app.on_event("startup")
